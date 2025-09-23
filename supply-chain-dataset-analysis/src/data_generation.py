@@ -8,6 +8,12 @@ def generate_supply_chain_data(n=2000):
     np.random.seed(42)
     random.seed(42)
 
+    # Delivery settings
+    LATE_DELIVERY_MIN_DAYS = 1
+    LATE_DELIVERY_MAX_DAYS = 7
+    LATE_DELIVERY_PROBABILITY = 0.3  # 30% chance of late delivery
+
+    # Categories and suppliers
     item_categories = {
         "Electronics": (50, 500),
         "Apparel": (10, 100),
@@ -18,7 +24,10 @@ def generate_supply_chain_data(n=2000):
     suppliers = ["Supplier_A", "Supplier_B", "Supplier_C"]
     statuses = ["Pending", "Received", "Backordered", "Canceled"]
 
-    warehouses = [f"WH_{fake.lexify(text='???').upper()}{random.randint(1,9)}" for _ in range(10)]
+    # Warehouses
+    letters_list = [''.join(np.random.choice(list('ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 3)) for _ in range(10)]
+    digits_list = [random.randint(1, 9) for _ in range(10)]
+    warehouses = [f"WH_{letters}{digit}" for letters, digit in zip(letters_list, digits_list)]
     warehouse_locs = {w: fake.city() for w in warehouses}
 
     data = []
@@ -43,13 +52,16 @@ def generate_supply_chain_data(n=2000):
         need_by_date = order_date + pd.Timedelta(days=random.randint(3, 15))
 
         if status == "Received":
-            lead_time = random.randint(1, 20)
-            receive_date = order_date + pd.Timedelta(days=lead_time)
-            if random.random() < 0.7:
-                receive_date = need_by_date + pd.Timedelta(days=random.randint(1, 7))
+            if random.random() < LATE_DELIVERY_PROBABILITY:
+                # Late delivery
+                receive_date = need_by_date + pd.Timedelta(days=random.randint(LATE_DELIVERY_MIN_DAYS, LATE_DELIVERY_MAX_DAYS))
+            else:
+                # On time
+                receive_date = need_by_date
+            lead_time = (receive_date - order_date).days
         else:
-            lead_time = None
             receive_date = None
+            lead_time = None
 
         data.append([
             order_id, category, supplier, warehouse, warehouse_loc, fc_associate,
@@ -66,7 +78,7 @@ def generate_supply_chain_data(n=2000):
 
     df = pd.DataFrame(data, columns=columns)
     df.to_csv("data/warehouse_orders.csv", index=False)
-    print("Generated {} rows and saved to data/warehouse_orders.csv".format(n))
+    print(f"✅ Generated {n} rows and saved to data/warehouse_orders.csv")
     return df
 
 if __name__ == "__main__":
