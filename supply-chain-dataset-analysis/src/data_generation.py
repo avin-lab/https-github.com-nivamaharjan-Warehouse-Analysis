@@ -1,85 +1,115 @@
 import pandas as pd
-import numpy as np
 import random
 from faker import Faker
+from datetime import timedelta
 
-def generate_supply_chain_data(n=2000):
-    fake = Faker()
-    np.random.seed(42)
-    random.seed(42)
+# Initialize Faker
+fake = Faker()
 
-    # Delivery settings
-    LATE_DELIVERY_MIN_DAYS = 1
-    LATE_DELIVERY_MAX_DAYS = 7
-    LATE_DELIVERY_PROBABILITY = 0.3  # 30% chance of late delivery
+# Parameters
+num_records = 5000   # adjust as needed
 
-    # Categories and suppliers
-    item_categories = {
-        "Electronics": (50, 500),
-        "Apparel": (10, 100),
-        "Office Supplies": (5, 50),
-        "Food & Beverage": (2, 20),
-        "Medical Supplies": (20, 200),
-    }
-    suppliers = ["Supplier_A", "Supplier_B", "Supplier_C"]
-    statuses = ["Pending", "Received", "Backordered", "Canceled"]
+# Weighted categories (uneven distribution)
+categories = ["Electronics", "Apparel", "Office Supplies", "Food & Beverage", "Medical Supplies"]
+category_weights = [0.35, 0.25, 0.15, 0.15, 0.10]  # Electronics & Apparel dominate
 
-    # Warehouses
-    letters_list = [''.join(np.random.choice(list('ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 3)) for _ in range(10)]
-    digits_list = [random.randint(1, 9) for _ in range(10)]
-    warehouses = [f"WH_{letters}{digit}" for letters, digit in zip(letters_list, digits_list)]
-    warehouse_locs = {w: fake.city() for w in warehouses}
+# Weighted suppliers (uneven distribution)
+suppliers = ["Supplier_A", "Supplier_B", "Supplier_C"]
+supplier_weights = [0.5, 0.3, 0.2]  # Supplier_A dominates
 
-    data = []
-    for i in range(n):
-        order_id = fake.unique.random_int(10000, 99999)
-        category = random.choice(list(item_categories.keys()))
-        supplier = random.choice(suppliers)
-        warehouse = random.choice(warehouses)
-        warehouse_loc = warehouse_locs[warehouse]
-        fc_associate = f"Assoc_{random.randint(100,999)}"
+# Warehouse names with uneven distribution
+warehouses = [f"WH_{fake.lexify(text='??').upper()}{random.randint(1,9)}" for _ in range(10)]
+warehouse_weights = [0.25, 0.2, 0.15, 0.1, 0.1, 0.07, 0.05, 0.04, 0.025, 0.025]  # top warehouses dominate
+warehouse_locations = {wh: fake.city() for wh in warehouses}
 
-        status = random.choice(statuses)
+# Associates (always assigned, reused multiple times)
+associates = ["Niva", "Sam", "Liam", "Olivia", "Emma", "Noah", "Mia", "Ava", "Ethan", "Sophia"]
 
-        qty_required = random.randint(10, 200)
-        qty_received = qty_required if status == "Received" else random.randint(0, qty_required)
-        qty_in_transfer = qty_required - qty_received
+# Status distribution (random)
+statuses = ["Pending", "Received", "Backordered", "Canceled"]
 
-        unit_price = random.randint(*item_categories[category])
-        order_cost = qty_received * unit_price
+# Generate data
+data = []
+today = pd.Timestamp.today()
 
-        order_date = fake.date_between(start_date="-60d", end_date="today")
-        need_by_date = order_date + pd.Timedelta(days=random.randint(3, 15))
+for i in range(1, num_records+1):
+order_id = i
 
-        if status == "Received":
-            if random.random() < LATE_DELIVERY_PROBABILITY:
-                # Late delivery
-                receive_date = need_by_date + pd.Timedelta(days=random.randint(LATE_DELIVERY_MIN_DAYS, LATE_DELIVERY_MAX_DAYS))
-            else:
-                # On time
-                receive_date = need_by_date
-            lead_time = (receive_date - order_date).days
-        else:
-            receive_date = None
-            lead_time = None
+# Weighted random choice for uneven distribution
+category = random.choices(categories, weights=category_weights, k=1)[0]
+supplier = random.choices(suppliers, weights=supplier_weights, k=1)[0]
+warehouse = random.choices(warehouses, weights=warehouse_weights, k=1)[0]
+location = warehouse_locations[warehouse]
 
-        data.append([
-            order_id, category, supplier, warehouse, warehouse_loc, fc_associate,
-            status, qty_required, qty_received, qty_in_transfer,
-            unit_price, order_cost, lead_time, need_by_date, receive_date
-        ])
+associate = random.choice(associates)  # always assigned
+status = random.choice(statuses)
 
-    columns = [
-        "order_id", "item_category", "supplier_name", "warehouse_name", "warehouse_location",
-        "fc_associate", "order_status", "total_quantity_required", "total_quantity_received",
-        "total_quantity_in_transfer", "unit_price", "order_cost", "lead_time_days",
-        "need_by_date", "receive_date"
-    ]
+# Quantities
+qty_required = random.randint(5, 300)
+if status == "Canceled":
+    qty_received = 0
+elif status == "Pending":
+    qty_received = random.randint(0, int(qty_required * 0.3))  # few or none
+else:
+    qty_received = random.randint(int(qty_required * 0.5), qty_required)
 
-    df = pd.DataFrame(data, columns=columns)
-    df.to_csv("data/warehouse_orders.csv", index=False)
-    print(f"✅ Generated {n} rows and saved to data/warehouse_orders.csv")
-    return df
+qty_in_transfer = qty_required - qty_received
+unit_price = {
+    "Electronics": random.randint(100, 500),
+    "Apparel": random.randint(20, 150),
+    "Office Supplies": random.randint(5, 80),
+    "Food & Beverage": random.randint(2, 50),
+    "Medical Supplies": random.randint(50, 300)
+}[category]
+order_cost = qty_received * unit_price
 
-if __name__ == "__main__":
-    generate_supply_chain_data()
+# Dates
+order_date = fake.date_between(start_date="-120d", end_date="today")
+lead_time = random.randint(1, 20)
+need_by_date = order_date + timedelta(days=random.randint(5, 30))
+
+# Receive date logic
+receive_date = None
+if status == "Received":
+    if random.random() > 0.3:  # 70% on-time
+        receive_date = order_date + timedelta(days=lead_time)
+    else:  # 30% late
+        receive_date = order_date + timedelta(days=lead_time + random.randint(1, 5))
+elif status in ["Pending", "Backordered"]:
+    if random.random() > 0.5:
+        receive_date = None
+    else:
+        receive_date = order_date + timedelta(days=lead_time + random.randint(-2, 5))
+
+# Ensure consistency: if associate exists + qty_received > 0
+if associate and receive_date is None and qty_received > 0:
+    receive_date = order_date + timedelta(days=lead_time)
+
+row = {
+    "order_id": order_id,
+    "item_category": category,
+    "supplier_name": supplier,
+    "warehouse_name": warehouse,
+    "warehouse_location": location,
+    "fc_associate": associate,
+    "order_status": status,
+    "total_quantity_required": qty_required,
+    "total_quantity_received": qty_received,
+    "total_quantity_in_transfer": qty_in_transfer,
+    "unit_price": unit_price,
+    "order_cost": order_cost,
+    "lead_time_days": lead_time,
+    "need_by_date": need_by_date,
+    "receive_date": receive_date
+}
+data.append(row)
+
+# Create DataFrame
+df = pd.DataFrame(data)
+
+# Preview
+print(df.head(10))
+
+# Save to CSV
+df.to_csv("supply_chain_data.csv", index=False)
+print("✅ supply_chain_data.csv saved with", len(df), "rows.")
